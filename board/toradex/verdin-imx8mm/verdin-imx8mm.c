@@ -9,6 +9,7 @@
 #include <asm/arch/sys_proto.h>
 #include <asm/global_data.h>
 #include <asm/io.h>
+#include <asm/mach-imx/boot_mode.h>
 #include <hang.h>
 #include <i2c.h>
 #include <micrel.h>
@@ -38,6 +39,13 @@ static int setup_fec(void)
 	return 0;
 }
 #endif
+
+int board_early_init_f(void) {
+#if defined(CONFIG_DISABLE_CONSOLE)
+	gd->flags |= (GD_FLG_SILENT | GD_FLG_DISABLE_CONSOLE);
+#endif
+	return 0;
+}
 
 int board_init(void)
 {
@@ -108,6 +116,11 @@ static void select_dt_from_module_version(void)
 int board_late_init(void)
 {
 	select_dt_from_module_version();
+
+	enum boot_device boot_dev = get_boot_device();
+	if (boot_dev == USB_BOOT) {
+		env_set("bootcmd","fastboot usb 0");
+	}
 
 	return 0;
 }
