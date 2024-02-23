@@ -44,6 +44,16 @@ config SPL_USB_GADGET
 
 if USB_GADGET
 
+config SPL_CI_UDC
+       bool "Support USB CI UDC controller in SPL"
+       help
+         Enables CI UDC driver to be available in SPL
+
+config SPL_USB_EHCI_HCD
+       bool "Support USB EHCI Host in SPL"
+       help
+         Enables EHCI host driver in SPL.
+
 config USB_GADGET_MANUFACTURER
 	string "Vendor name of the USB device"
 	default "NVIDIA" if ARCH_TEGRA

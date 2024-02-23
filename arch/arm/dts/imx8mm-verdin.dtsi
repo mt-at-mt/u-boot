@@ -15,6 +15,15 @@
 	aliases {
 		rtc0 = &rtc_i2c;
 		rtc1 = &snvs_rtc;
+		usbgadget0 = &usbg1;
+	};
+
+	usbg1: usbg1 {
+		u-boot,dm-spl;
+		compatible = "fsl,imx27-usb-gadget";
+		dr_mode = "peripheral";
+		chipidea,usb = <&usbotg1>;
+		status = "okay";
 	};
 
 	backlight: backlight {

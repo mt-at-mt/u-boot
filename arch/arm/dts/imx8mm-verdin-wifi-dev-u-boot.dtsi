@@ -11,6 +11,22 @@
 		bootph-pre-ram;
 		wdt = <&wdog1>;
 	};
+
+       usbg1: usbg1 {
+               u-boot,dm-spl;
+               compatible = "fsl,imx27-usb-gadget";
+               dr_mode = "peripheral";
+               chipidea,usb = <&usbotg1>;
+               status = "okay";
+       };
+
+};
+
+&{/aliases} {
+	eeprom0 = &eeprom_module;
+	eeprom1 = &eeprom_carrier_board;
+	eeprom2 = &eeprom_display_adapter;
+	usbgadget0 = &usbg1;
 };
 
 &{/aliases} {

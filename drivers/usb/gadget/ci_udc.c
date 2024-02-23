@@ -26,6 +26,7 @@
 #include <usb/ci_udc.h>
 #include "../host/ehci.h"
 #include "ci_udc.h"
+#include <dm.h>
 
 /*
  * Check if the system has too long cachelines. If the cachelines are
@@ -85,6 +86,8 @@ static struct usb_endpoint_descriptor ep0_desc = {
 };
 
 static int ci_pullup(struct usb_gadget *gadget, int is_on);
+static int ci_gadget_start(struct usb_gadget *g, struct usb_gadget_driver *d);
+static int ci_gadget_stop(struct usb_gadget *g);
 static int ci_ep_enable(struct usb_ep *ep,
 		const struct usb_endpoint_descriptor *desc);
 static int ci_ep_disable(struct usb_ep *ep);
@@ -97,6 +100,8 @@ static void ci_ep_free_request(struct usb_ep *ep, struct usb_request *_req);
 
 static const struct usb_gadget_ops ci_udc_ops = {
 	.pullup = ci_pullup,
+	.udc_start = ci_gadget_start,
+	.udc_stop  = ci_gadget_stop,
 };
 
 static const struct usb_ep_ops ci_ep_ops = {
@@ -149,6 +154,20 @@ static struct ci_drv controller = {
 		.max_speed = USB_SPEED_HIGH,
 	},
 };
+
+static int ci_gadget_start(struct usb_gadget *g, struct usb_gadget_driver *d)
+{
+	controller.driver = d;
+	printf("Registered gadget driver %s\n", controller.gadget.name);
+	return 0;
+}
+
+static int ci_gadget_stop(struct usb_gadget *g)
+{
+	printf("Unregistered gadget driver %s\n", controller.gadget.name);
+	controller.driver = 0;
+	return 0;
+}
 
 /**
  * ci_get_qh() - return queue head for endpoint
@@ -311,7 +330,7 @@ static void ci_ep_free_request(struct usb_ep *ep, struct usb_request *req)
 
 static void ep_enable(int num, int in, int maxpacket)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	unsigned n;
 
 	n = readl(&udc->epctrl[num]);
@@ -357,7 +376,7 @@ static int ci_ep_enable(struct usb_ep *ep,
 
 static int ep_disable(int num, int in)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	unsigned int ep_bit, enable_bit;
 	int err;
 
@@ -470,7 +489,7 @@ static void ci_debounce(struct ci_req *ci_req, int in)
 
 static void ci_ep_submit_next_request(struct ci_ep *ci_ep)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	struct ept_queue_item *item;
 	struct ept_queue_head *head;
 	int bit, num, len, in;
@@ -711,7 +730,7 @@ static void handle_setup(void)
 	struct ci_ep *ci_ep = &controller.ep[0];
 	struct ci_req *ci_req;
 	struct usb_request *req;
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	struct ept_queue_head *head;
 	struct usb_ctrlrequest r;
 	int status = 0;
@@ -814,7 +833,7 @@ static void stop_activity(void)
 {
 	int i, num, in;
 	struct ept_queue_head *head;
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	writel(readl(&udc->epcomp), &udc->epcomp);
 #ifdef CONFIG_CI_UDC_HAS_HOSTPC
 	writel(readl(&udc->epsetupstat), &udc->epsetupstat);
@@ -838,16 +857,16 @@ static void stop_activity(void)
 	}
 }
 
-void udc_irq(void)
+static int udc_irq(void)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	unsigned n = readl(&udc->usbsts);
 	writel(n, &udc->usbsts);
 	int bit, i, num, in;
 
 	n &= (STS_SLI | STS_URI | STS_PCI | STS_UI | STS_UEI);
 	if (n == 0)
-		return;
+		return IRQ_NONE;
 
 	if (n & STS_URI) {
 		DBG("-- reset --\n");
@@ -905,23 +924,17 @@ void udc_irq(void)
 			}
 		}
 	}
+	return IRQ_HANDLED;
 }
 
 int dm_usb_gadget_handle_interrupts(struct udevice *dev)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
-	u32 value;
-
-	value = readl(&udc->usbsts);
-	if (value)
-		udc_irq();
-
-	return value;
+	return udc_irq();
 }
 
 void udc_disconnect(void)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	/* disable pullup */
 	stop_activity();
 	writel(USBCMD_FS2, &udc->usbcmd);
@@ -932,13 +945,11 @@ void udc_disconnect(void)
 
 static int ci_pullup(struct usb_gadget *gadget, int is_on)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 	if (is_on) {
 		/* RESET */
 		writel(USBCMD_ITC(MICRO_8FRAME) | USBCMD_RST, &udc->usbcmd);
 		udelay(200);
-
-		ci_init_after_reset(controller.ctrl);
 
 		writel((unsigned long)controller.epts, &udc->epinitaddr);
 
@@ -962,7 +973,7 @@ static int ci_pullup(struct usb_gadget *gadget, int is_on)
 	return 0;
 }
 
-static int ci_udc_probe(void)
+static int ci_udc_probe(struct udevice *dev)
 {
 	struct ept_queue_head *head;
 	int i;
@@ -973,6 +984,9 @@ static int ci_udc_probe(void)
 	const int eplist_align = roundup(eplist_min_align, ARCH_DMA_MINALIGN);
 	const int eplist_raw_sz = num * sizeof(struct ept_queue_head);
 	const int eplist_sz = roundup(eplist_raw_sz, ARCH_DMA_MINALIGN);
+
+	controller.driver = 0;
+	controller.udc = (struct ci_udc *) 0x32e40140; // TODO read from DTB
 
 	/* The QH list must be aligned to 4096 bytes. */
 	controller.epts = memalign(eplist_align, eplist_sz);
@@ -1047,67 +1061,37 @@ static int ci_udc_probe(void)
 		free(controller.epts);
 		return -ENOMEM;
 	}
-
-	return 0;
+	return usb_add_gadget_udc((struct device *)dev, &controller.gadget);
 }
 
-int usb_gadget_register_driver(struct usb_gadget_driver *driver)
+int ci_udc_remove(struct udevice *dev)
 {
-	int ret;
-
-	if (!driver)
-		return -EINVAL;
-	if (!driver->bind || !driver->setup || !driver->disconnect)
-		return -EINVAL;
-
-#if CONFIG_IS_ENABLED(DM_USB)
-	ret = usb_setup_ehci_gadget(&controller.ctrl);
-#else
-	ret = usb_lowlevel_init(0, USB_INIT_DEVICE, (void **)&controller.ctrl);
-#endif
-	if (ret)
-		return ret;
-
-	ret = ci_udc_probe();
-	if (ret) {
-		DBG("udc probe failed, returned %d\n", ret);
-		return ret;
-	}
-
-	ret = driver->bind(&controller.gadget);
-	if (ret) {
-		DBG("driver->bind() returned %d\n", ret);
-		return ret;
-	}
-	controller.driver = driver;
-
-	return 0;
-}
-
-int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
-{
-	udc_disconnect();
-
-	driver->unbind(&controller.gadget);
-	controller.driver = NULL;
+	usb_del_gadget_udc(&controller.gadget);
 
 	ci_ep_free_request(&controller.ep[0].ep, &controller.ep0_req->req);
 	free(controller.items_mem);
 	free(controller.epts);
 
-#if CONFIG_IS_ENABLED(DM_USB)
-	usb_remove_ehci_gadget(&controller.ctrl);
-#else
-	usb_lowlevel_stop(0);
-	controller.ctrl = NULL;
-#endif
-
-	return 0;
+	return dm_scan_fdt_dev(dev);
 }
+
+static const struct udevice_id ci_udc_ids[] = {
+	{ .compatible = "fsl,imx27-usb-gadget" },
+	{},
+};
+
+U_BOOT_DRIVER(ci_udc_usb) = {
+	.name		= "ci-udc",
+	.id		= UCLASS_USB_GADGET_GENERIC,
+	.of_match	= ci_udc_ids,
+	.probe		= ci_udc_probe,
+	.remove		= ci_udc_remove,
+	.priv_auto	= sizeof(struct ci_udc),
+};
 
 bool dfu_usb_get_reset(void)
 {
-	struct ci_udc *udc = (struct ci_udc *)controller.ctrl->hcor;
+	struct ci_udc *udc = controller.udc;
 
 	return !!(readl(&udc->usbsts) & STS_URI);
 }
