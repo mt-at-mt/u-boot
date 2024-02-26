@@ -130,6 +130,22 @@
 						type = "atf-bl31";
 					};
 				};
+
+#ifdef CONFIG_OPTEE
+				optee {
+						description = "OP-TEE";
+						type = "firmware";
+						arch = "arm";
+						os = "tee";
+						compression = "none";
+						load = <0xbe000000>;
+						entry = <0xbe000000>;
+
+						blob-ext {
+								filename = "tee.bin";
+						};
+				};
+#endif
 #endif
 
 				binman_fip: fip {
@@ -160,7 +176,11 @@
 					fdt = "fdt-SEQ";
 					firmware = "uboot";
 #ifndef CONFIG_ARMV8_PSCI
+#ifdef CONFIG_OPTEE
+					loadables = "atf", "optee";
+#else
 					loadables = "atf";
+#endif
 #endif
 				};
 			};
