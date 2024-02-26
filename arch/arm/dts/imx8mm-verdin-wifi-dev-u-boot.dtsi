@@ -13,7 +13,7 @@
 	};
 
        usbg1: usbg1 {
-               u-boot,dm-spl;
+               bootph-pre-ram;
                compatible = "fsl,imx27-usb-gadget";
                dr_mode = "peripheral";
                chipidea,usb = <&usbotg1>;
