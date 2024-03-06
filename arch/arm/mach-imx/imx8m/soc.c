@@ -1357,8 +1357,12 @@ static int ft_add_optee_node(void *fdt, struct bd_info *bd)
 	subpath = "optee";
 	offs = fdt_add_subnode(fdt, offs, subpath);
 	if (offs < 0) {
-		printf("Could not create %s node.\n", subpath);
-		return offs;
+		path = "/firmware/optee";
+		offs = fdt_path_offset(fdt, path);
+		if (offs < 0) {
+			printf("firmware/optee node missing\n");
+			return offs;
+		}
 	}
 
 	fdt_setprop_string(fdt, offs, "compatible", "linaro,optee-tz");
@@ -1534,6 +1538,7 @@ usb_modify_speed:
 	    fixup_thermal_trips(blob, "soc-thermal"))
 		printf("Failed to update soc-thermal trip(s)");
 
+	printf("FT add OPTEE node\n");
 	return ft_add_optee_node(blob, bd);
 }
 #endif
