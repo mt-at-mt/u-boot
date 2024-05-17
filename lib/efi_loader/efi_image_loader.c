@@ -482,7 +482,7 @@ bool efi_image_parse(void *efi, size_t len, struct efi_image_regions **regp,
 		log_debug("extra data for hash: %zu\n",
 			  len - (bytes_hashed + authsz));
 		efi_image_region_add(regs, efi + bytes_hashed,
-				     efi + len - authsz, 0);
+				     efi + len - authsz, 1);
 	}
 
 	/* Return Certificates Table */
